@@ -33,5 +33,4 @@ parts:
     override-build: |
       snapcraftctl build
       mkdir -p $SNAPCRAFT_PART_INSTALL/bin
-      cp init.py $SNAPCRAFT_PART_INSTALL/bin/
       cp ubuntu-toolbox $SNAPCRAFT_PART_INSTALL/bin/
