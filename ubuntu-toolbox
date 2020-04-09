@@ -79,33 +79,49 @@ def launch_container(name, release):
     return container
 
 def query_container(args):
+    name = sanitize_name(args.name)
     for c in client.containers.all():
-        if c.name == args.name:
-            print('Name: %s' % c.name)
+        if c.name == name:
+            print('Name: %s' % display_name(c.name))
             print('Architecture: %s' % c.architecture)
             print('Description: %s' % c.description)
+            print('OS: %s' % c.config['image.os'].capitalize())
+            print('OS Version: %s' % c.config['image.version'])
             print('IP: %s' % c.state().network['eth0']['addresses'][0]['address'])
             print('Status: %s' % c.state().status)
 
 def list_containers(args=None):
     containers = client.containers.all()
     for container in containers:
-        print (container.name)
+        if container.name.startswith('toolbox-'):
+            print (display_name(container.name))
 
 def create_container(args):
+    name = sanitize_name(args.name)
     create_storage()
     for img in [ 'focal', 'bionic', 'xenial' ]:
         init_image(img)
-    container = launch_container(args.name, args.release)
+    container = launch_container(name, args.release)
     container.all(client)[0].name
     query_container(args)
 
 def delete_container(args):
-    container =  client.containers.get(args.name)
+    name = sanitize_name(args.name)
+    container = client.containers.get(name)
     print('Stopping container %s' % args.name)
     container.stop(wait=True)
     print('Deleting container %s' % args.name)
     container.delete(wait=True)
+
+def display_name(name):
+    if name.startswith('toolbox-'):
+        name = name.replace("toolbox-","")
+    return name
+
+def sanitize_name(name):
+    if not name.startswith('toolbox-'):
+        name = "toolbox-" + name
+    return name
 
 def main():
     parser = argparse.ArgumentParser(description='Manage and use workspace containers')
