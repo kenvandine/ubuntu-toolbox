@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+
+import os
+import platform
+import shutil
+import sys
+import warnings
+import argparse
+from pylxd import Client
+
+client = Client()
+
+warnings.filterwarnings('ignore')
+
+def convert(num):
+    unit = 1000.0
+    for x in ['', 'KB', 'MB', 'GB', 'TB']:
+        if num < unit:
+            return '%.0f%s' % (num, x)
+        num /= unit
+
+def get_driver():
+    machine = platform.machine().lower()
+    if machine.startswith(('arm', 'aarch64')):
+        return 'btrfs'
+    return 'zfs'
+
+def create_storage():
+    try:
+        snap_data = os.environ['SNAP_DATA']
+    except:
+        snap_data = os.environ['HOME']
+
+    free = ( shutil.disk_usage(snap_data)[-1] / 10 ) * 6 
+    
+    config = { "config": { "size": convert(free) },
+            "driver": get_driver(), "name": "default" }
+
+    try:
+        client.storage_pools.get('default')
+    except:
+        try:
+            client.storage_pools.create(config)
+        except Exception as ex:
+            print(ex)
+            sys.exit(1)
+
+def init_image(name):
+    try:
+        if client.images.get_by_alias(name):
+          print('Image: %s already exists' % name)
+          return
+    except:
+        print('Creating master image: %s' % name)
+        
+    image = client.images.create_from_simplestreams(
+        'https://cloud-images.ubuntu.com/daily',
+        name)
+    image.add_alias(name, '')
+
+def launch_container(name, release):
+    config = {'name': name, 'source': {'type': 'image',
+        'alias': release}}
+
+    if client.containers.exists(name):
+        print('Container %s already exists' % name)
+        sys.exit(1)
+
+    container = client.containers.create(config, wait=True)
+
+    print('Starting container %s' % name)
+    container.start(wait=True)
+
+    print('Waiting for network...')
+    for i in range(1, 15):
+        if container.execute(['ping', '-c1', '8.8.8.8']) == 0:
+            break
+
+    return container
+
+def query_container(args):
+    for c in client.containers.all():
+        if c.name == args.name:
+            print('Name: %s' % c.name)
+            print('Architecture: %s' % c.architecture)
+            print('Description: %s' % c.description)
+            print('IP: %s' % c.state().network['eth0']['addresses'][0]['address'])
+            print('Status: %s' % c.state().status)
+
+def list_containers(args=None):
+    containers = client.containers.all()
+    for container in containers:
+        print (container.name)
+
+def create_container(args):
+    create_storage()
+    for img in [ 'focal', 'bionic', 'xenial' ]:
+        init_image(img)
+    container = launch_container(args.name, args.release)
+    container.all(client)[0].name
+    query_container(args)
+
+def delete_container(args):
+    container =  client.containers.get(args.name)
+    print('Stopping container %s' % args.name)
+    container.stop(wait=True)
+    print('Deleting container %s' % args.name)
+    container.delete(wait=True)
+
+def main():
+    parser = argparse.ArgumentParser(description='Manage and use workspace containers')
+    subparsers = parser.add_subparsers(dest='subparser_name', title='commands', description='valid commands', help='help for command')
+
+    list_parser = subparsers.add_parser('list', help='List available workspaces')
+    list_parser.set_defaults(func=list_containers)
+
+    create_parser = subparsers.add_parser('create', help='Create new workspace')
+    create_parser.add_argument('name',
+                               help='Name for the workspace')
+    create_parser.add_argument('release',
+                               help='Ubuntu release for the workspace')
+    create_parser.set_defaults(func=create_container)
+
+    delete_parser = subparsers.add_parser('delete', help='Delete a workspace')
+    delete_parser.add_argument('name',
+                               help='Name of workspace to delete')
+    delete_parser.set_defaults(func=delete_container)
+
+    query_parser = subparsers.add_parser('query', help='Query a workspace')
+    query_parser.add_argument('name',
+                              help='Name of workspace to delete')
+    query_parser.set_defaults(func=query_container)
+
+    args = parser.parse_args()
+    args.func(args)
+
+main()

@@ -1,0 +1,37 @@
+name: ubuntu-toolbox
+base: core18
+version: git
+summary: FIXME
+description: |
+  FIXME
+
+grade: stable
+confinement: strict
+
+apps:
+  ubuntu-toolbox:
+    command: ubuntu-toolbox
+    plugs:
+      - lxd
+      - home
+      - mount-observe
+      - network
+      - network-bind
+      - system-observe
+
+parts:
+  pylxd:
+    plugin: python
+    python-packages:
+      - pylxd
+    build-packages:
+      - libffi-dev
+      - libssl-dev
+  scripts:
+    source: .
+    plugin: nil
+    override-build: |
+      snapcraftctl build
+      mkdir -p $SNAPCRAFT_PART_INSTALL/bin
+      cp init.py $SNAPCRAFT_PART_INSTALL/bin/
+      cp ubuntu-toolbox $SNAPCRAFT_PART_INSTALL/bin/
